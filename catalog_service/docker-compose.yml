@@ -1,0 +1,61 @@
+version: "3.8"
+services:
+  catalog-service-api:
+    build:
+      context: .
+    container_name: catalog-service-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    networks:
+      - app-shared-network
+    depends_on:
+      - elasticsearch1
+      - redis
+    volumes:
+      - ./src:/app/src
+    command: ["sleep", "10000000000000"]
+
+  elasticsearch1:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.14
+    container_name: elasticsearch1
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=true
+      - xpack.security.authc.realms.native.native1.enabled=true
+      - xpack.security.authc.token.enabled=true
+      - ELASTIC_PASSWORD=elastic_password_example
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+    networks:
+      - app-shared-network
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+  redis:
+    image: redis
+    stop_grace_period: 1m
+    ports:
+      - "6380:6380"
+    volumes:
+      - ./redis_data:/data
+    command: >
+      --requirepass redis12345 --port 6380
+    networks:
+      - app-shared-network
+
+networks:
+  app-shared-network:
+    external: true
+
+volumes:
+  postgres_data:
+  esdata:
+  redis_data:

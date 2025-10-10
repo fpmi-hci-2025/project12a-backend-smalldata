@@ -1,0 +1,7 @@
+__pycache__/
+venv/
+.env
+elastic_sample/
+order_service_demo/
+redis_data/
+pg_data/

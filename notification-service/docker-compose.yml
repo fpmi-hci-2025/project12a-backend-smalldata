@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  notification-service:
+    build:
+      context: .
+    container_name: notification-service
+    env_file:
+      - ./.env
+    networks:
+      - app-shared-network
+    volumes:
+      - ./src:/app/src
+    command: ["make", "run"]
+
+networks:
+  app-shared-network:
+    external: true
+
