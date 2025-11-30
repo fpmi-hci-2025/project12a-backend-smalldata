@@ -17,3 +17,19 @@ async def authorize(authorization: str = Header(...)) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+
+async def authorize_admin(authorization: str = Header(...)) -> None:
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token format",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+    if token != config.admin_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing admin API token",
+        )

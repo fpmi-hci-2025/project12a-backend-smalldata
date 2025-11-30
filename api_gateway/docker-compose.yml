@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - app-shared-network
+    depends_on:
+      - catalog-service-api
+      - order-service-api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  app-shared-network:
+    external: true
+
+# Note: This docker-compose assumes that catalog-service-api and order-service-api 
+# containers are already running via their respective docker-compose files

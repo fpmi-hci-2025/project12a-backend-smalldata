@@ -1,0 +1,182 @@
+version: "3.8"
+
+# Main orchestration file for the entire e-commerce backend
+# This file starts all services in the correct order
+
+services:
+  # Infrastructure services
+  rabbit:
+    image: rabbitmq:management-alpine
+    container_name: rabbit
+    ports:
+      - "15672:15672"  # Management UI
+      - "5672:5672"    # AMQP port
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - app-shared-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  postgres:
+    image: postgres:16
+    container_name: db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 12345
+      POSTGRES_DB: db-name
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-shared-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.14
+    container_name: elasticsearch1
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=elastic_password_example
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    networks:
+      - app-shared-network
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://elastic:elastic_password_example@localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    command: redis-server --requirepass redis12345 --port 6380
+    ports:
+      - "6380:6380"
+    networks:
+      - app-shared-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "-a", "redis12345", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Application services
+  catalog-service-api:
+    build:
+      context: ./catalog_service
+    container_name: catalog-service-api
+    environment:
+      - ELASTIC_HOST=elasticsearch1
+      - ELASTIC_PORT=9200
+      - ELASTIC_USER=elastic
+      - ELASTIC_PASSWORD=elastic_password_example
+      - REDIS_HOST=redis
+      - REDIS_PORT=6380
+      - REDIS_PASSWORD=redis12345
+      - ADMIN_API_KEY=admin_master_key_2024
+    command: ["sh", "-c", "cd src && uvicorn main:app --host=0.0.0.0 --port=8000 --workers 4"]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-shared-network
+    volumes:
+      - ./catalog_service/src:/app/src
+
+  order-service-api:
+    build:
+      context: ./order_service
+    container_name: order-service-api
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=12345
+      - POSTGRES_DB=db-name
+      - RABBITMQ_HOST=rabbit
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - CATALOG_SERVICE_URL=http://catalog-service-api:8000
+      - ADMIN_API_KEY=admin_master_key_2024
+    command: ["sh", "-c", "cd src && uvicorn main:app --host=0.0.0.0 --port=8080 --workers 4 --reload"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbit:
+        condition: service_healthy
+      catalog-service-api:
+        condition: service_started
+    networks:
+      - app-shared-network
+    volumes:
+      - ./order_service/src:/app/src
+
+  notification-service:
+    build:
+      context: ./notification-service
+    container_name: notification-service
+    environment:
+      - RABBITMQ_HOST=rabbit
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8251573338:AAG7K-jBsb3JDp9Y6UCorEF_sUD2YGQe5Lg}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:--1003308751403}
+    command: ["sh", "-c", "cd src && faststream run event_processor:app"]
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    networks:
+      - app-shared-network
+    volumes:
+      - ./notification-service/src:/app/src
+
+  # API Gateway
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "8000:80"
+    volumes:
+      - ./api_gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      catalog-service-api:
+        condition: service_started
+      order-service-api:
+        condition: service_started
+    networks:
+      - app-shared-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  esdata:
+
+networks:
+  app-shared-network:
+    driver: bridge

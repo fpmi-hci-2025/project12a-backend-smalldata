@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from elasticsearch import AsyncElasticsearch
 from elasticsearch.exceptions import NotFoundError
@@ -29,33 +29,63 @@ class ProductService:
         self,
         title: Optional[str] = None,
         category_id: Optional[int] = None,
-        price: Optional[float] = None,
+        product_type: Optional[str] = None,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+        price_min: Optional[float] = None,
+        price_max: Optional[float] = None,
+        brand: Optional[str] = None,
         description: Optional[str] = None,
-    ) -> List[ProductDTO]:
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Tuple[List[ProductDTO], int]:
         must_clauses = []
-
+        
         if title is not None:
             must_clauses.append({"match": {"title": title}})
         if category_id is not None:
             must_clauses.append({"term": {"category_id": category_id}})
-        if price is not None:
-            must_clauses.append({"term": {"price": price}})
         if description is not None:
             must_clauses.append({"match": {"description": description}})
+            
+        # Electronics-specific filters through characteristics
+        if product_type is not None:
+            must_clauses.append({"term": {"characteristics.type.keyword": product_type}})
+        if color is not None:
+            must_clauses.append({"term": {"characteristics.color.keyword": color}})
+        if memory is not None:
+            must_clauses.append({"term": {"characteristics.memory.keyword": memory}})
+        if brand is not None:
+            must_clauses.append({"term": {"characteristics.brand.keyword": brand}})
+
+        # Price range filter
+        if price_min is not None or price_max is not None:
+            price_range = {}
+            if price_min is not None:
+                price_range["gte"] = price_min
+            if price_max is not None:
+                price_range["lte"] = price_max
+            must_clauses.append({"range": {"price": price_range}})
 
         query = {
-            "size": 100,
+            "from": offset,
+            "size": limit,
             "query": {
                 "bool": {
-                    "must": must_clauses
+                    "must": must_clauses if must_clauses else [{"match_all": {}}]
                 }
-            }
+            },
+            "sort": [{"created_at": {"order": "desc"}}]
         }
 
         response = await self.es.search(index=self.index, body=query)
-        return [
+        
+        products = [
             self._map_hit_to_dto(hit["_source"]) for hit in response["hits"]["hits"]
         ]
+        total = response["hits"]["total"]["value"]
+        
+        return products, total
 
     async def create_product(
         self,

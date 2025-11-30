@@ -20,3 +20,15 @@ async def verify_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API token",
         )
+
+
+async def verify_admin_token(
+    authorization: str = Security(api_key_header),
+    config: Settings = Depends(get_config),
+):
+    expected = f"Bearer {config.admin_api_key}"
+    if authorization != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing admin API token",
+        )
