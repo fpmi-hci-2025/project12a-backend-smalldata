@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     catalog_service_url: str
 
     auth_token: str
+    admin_api_key: str
 
 
 config = Settings()

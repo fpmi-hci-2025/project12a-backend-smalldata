@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     )
 
     api_token: str = "token"
+    admin_api_key: str
 
     elastic_host: str
     elastic_port: int

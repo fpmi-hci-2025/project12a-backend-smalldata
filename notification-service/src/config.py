@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     rabbitmq_user: str
     rabbitmq_password: str
     rabbitmq_notifications_queue: str
+    
+    telegram_bot_token: str
+    telegram_chat_id: str
 
 
 config = Settings()
